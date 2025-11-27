@@ -50,7 +50,7 @@ def main():
         root_dir = DATASET_ROOT, split = 'train', 
         num_frames = 5, img_size = (256, 448), max_objs = 10
     )
-    dataloader = DataLoader(train_dataset, batch_size = 16, shuffle = True, num_workers = 8, pin_memory = True)
+    dataloader = DataLoader(train_dataset, batch_size = 16, shuffle = True, num_workers = 4, pin_memory = True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = VITA_TCOVIS(num_tokens = 10, hidden_dim = 256).to(device)
