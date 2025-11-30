@@ -126,6 +126,6 @@ def evaluate_and_log(model, dataset, device, epoch, beta = 0.2, match_threshold 
     print(f"Total ID Switches (vs Ground Truth): {switches}")
 
     # Log the final ID switch metric
-    logger.report_single_value(name = 'Final ID Switches', value = switches, iteration = epoch)
+    logger.report_single_value(name = 'Final ID Switches', value = switches)
     
     return switches
