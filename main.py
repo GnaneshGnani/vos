@@ -50,7 +50,7 @@ def main():
         root_dir = DATASET_ROOT, split = 'train', 
         num_frames = 5, img_size = (256, 448), max_objs = 10
     )
-    dataloader = DataLoader(train_dataset, batch_size = 16, shuffle = True, num_workers = 4, pin_memory = True)
+    dataloader = DataLoader(train_dataset, batch_size = 8, shuffle = True, num_workers = 4, pin_memory = True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = VITA_TCOVIS(num_tokens = 10, hidden_dim = 256).to(device)
@@ -58,7 +58,7 @@ def main():
     weight_dict = {'loss_mask': 1.0, 'loss_match': 1.0, 'loss_contrastive': 0.5}
     task.connect_configuration(
         {'num_tokens': 10, 'hidden_dim': 256, 'beta': 0.2, 'match_threshold': 0.5,
-         'epochs': 5, 'batch_size': 2, 'learning_rate_head': 1e-4, 'learning_rate_backbone': 1e-5}
+         'epochs': 10, 'batch_size': 8, 'learning_rate_head': 1e-4, 'learning_rate_backbone': 1e-5}
     )
 
     matcher = HungarianMatcher(cost_class = 1, cost_mask = 2, cost_dice = 2)
@@ -74,7 +74,7 @@ def main():
 
     optimizer = optim.AdamW(param_dicts, lr = 1e-4)
 
-    epochs = 5
+    epochs = 10
     for epoch in range(epochs):
         model.train()
         total_loss_epoch = 0
