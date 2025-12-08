@@ -42,14 +42,14 @@ class VITA_TCOVIS(nn.Module):
     def forward(self, frames):
         B, T, C, H, W = frames.shape
         frames_flat = frames.view(B * T, C, H, W)
-        features = self.conv_project(self.backbone(frames_flat))
+        features = self.conv_project(self.backbone(frames_flat)) # B x hidden_dim X W x H
         
         feat_H, feat_W = features.shape[2], features.shape[3]
-        features_seq = features.flatten(2).permute(0, 2, 1)
+        features_seq = features.flatten(2).permute(0, 2, 1) # B X (W X H) X hidden_dim
         
-        tokens = self.object_tokens.expand(B*T, -1, -1)
-        out_tokens = self.transformer(tokens, features_seq)
-        out_tokens = out_tokens.view(B, T, self.num_tokens, -1)
+        tokens = self.object_tokens.expand(B * T, -1, -1) # (B x T) X num_tokens X hidden_dim
+        out_tokens = self.transformer(tokens, features_seq) # (B x T) X num_tokens X hidden_dim
+        out_tokens = out_tokens.view(B, T, self.num_tokens, -1) 
         features_aligned = features.view(B, T, -1, feat_H, feat_W)
         
         all_masks, all_embs = [], []

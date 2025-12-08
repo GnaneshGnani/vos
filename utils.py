@@ -18,12 +18,12 @@ class HungarianMatcher(nn.Module):
         indices = []
         for b in range(B):
             out_mask = pred_masks[b].flatten(1).sigmoid() 
-            tgt_mask = gt_masks[b].flatten(1)
+            gt_mask = gt_masks[b].flatten(1)
             
-            cost_mask = -torch.mm(out_mask, tgt_mask.t())
+            cost_mask = -torch.mm(out_mask, gt_mask.t())
             
-            numerator = 2 * torch.mm(out_mask, tgt_mask.t())
-            denominator = out_mask.sum(1).unsqueeze(1) + tgt_mask.sum(1).unsqueeze(0) + 1e-6
+            numerator = 2 * torch.mm(out_mask, gt_mask.t())
+            denominator = out_mask.sum(1).unsqueeze(1) + gt_mask.sum(1).unsqueeze(0) + 1e-6
             cost_dice = 1 - (numerator / denominator)
             
             C = self.cost_mask * cost_mask + self.cost_dice * cost_dice
@@ -38,8 +38,10 @@ class TCOVISCriterion(nn.Module):
     def __init__(self, matcher, weight_dict = None, temperature = 0.1, alpha = 5.0):
         super().__init__()
         self.matcher = matcher
+
         self.weight_dict = weight_dict if weight_dict else {
-            'loss_mask': 1.0, 
+            'loss_mask': 5.0, 
+            'loss_dice': 5.0, 
             'loss_match': 1.0, 
             'loss_contrastive': 0.5
         }
@@ -49,7 +51,9 @@ class TCOVISCriterion(nn.Module):
         self.bce_loss = nn.BCEWithLogitsLoss(reduction = 'none')
 
     def loss_masks(self, pred_masks, gt_masks, indices):
-        loss_mask = 0.0
+        loss_bce = 0.0
+        loss_dice = 0.0
+
         num_pairs = 0
         
         for b, (pred_idx, gt_idx) in enumerate(indices):
@@ -57,12 +61,23 @@ class TCOVISCriterion(nn.Module):
             
             src_masks = pred_masks[b, pred_idx]
             target_masks = gt_masks[b, gt_idx]
+
+            loss_bce += self.bce_loss(src_masks, target_masks).mean()
             
-            loss_mask += self.bce_loss(src_masks, target_masks).mean()
+            src_masks_sigmoid = src_masks.sigmoid()
+            src_flat = src_masks_sigmoid.flatten(1)
+            target_flat = target_masks.flatten(1)
+            
+            numerator = 2 * (src_flat * target_flat).sum(1)
+            denominator = src_flat.sum(1) + target_flat.sum(1) + 1e-6
+            loss_dice += (1 - numerator / denominator).mean()
+            
             num_pairs += 1
             
-        if num_pairs == 0: return torch.tensor(0.0, device = pred_masks.device)
-        return loss_mask / num_pairs
+        if num_pairs == 0: 
+            return torch.tensor(0.0, device = pred_masks.device), torch.tensor(0.0, device = pred_masks.device)
+        
+        return loss_bce / num_pairs, loss_dice / num_pairs
 
     def loss_matching(self, pred_embs, indices_list):
         B, T, N, D = pred_embs.shape
@@ -162,30 +177,37 @@ class TCOVISCriterion(nn.Module):
         
         indices_list = []
         mask_loss_accum = 0.0
+        dice_loss_accum = 0.0 # Accumulator for Dice
         
         for t in range(T):
             indices = self.matcher(pred_masks[:, t].detach(), gt_masks[:, t])
             indices_list.append(indices)
-            mask_loss_accum += self.loss_masks(pred_masks[:, t], gt_masks[:, t], indices)
+            
+            l_bce, l_dice = self.loss_masks(pred_masks[:, t], gt_masks[:, t], indices)
+            mask_loss_accum += l_bce
+            dice_loss_accum += l_dice
         
+        # Average over time
         mask_loss_accum /= T
+        dice_loss_accum /= T
         
         loss_ctr = self.loss_contrastive(pred_embs, indices_list)
         loss_match = self.loss_matching(pred_embs, indices_list)
         
         losses = {
             "loss_mask": mask_loss_accum,
+            "loss_dice": dice_loss_accum,
             "loss_contrastive": loss_ctr,
             "loss_match": loss_match
         }
         
-        # Calculate final weighted loss
+        # Final Weighted Sum
         total_loss = (losses['loss_mask'] * self.weight_dict['loss_mask'] + 
+                      losses['loss_dice'] * self.weight_dict['loss_dice'] + 
                       losses['loss_match'] * self.weight_dict['loss_match'] + 
                       losses['loss_contrastive'] * self.weight_dict['loss_contrastive'])
         
         return losses, total_loss
-
 
 def calculate_true_id_switches(pred_results, gt_masks):
     id_switches = 0

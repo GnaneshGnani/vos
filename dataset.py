@@ -54,7 +54,6 @@ class YouTubeVOSDataset(Dataset):
         # Get the top N most frequent IDs
         target_ids = sorted([uid for uid, count in id_counts.most_common(self.max_objs)])
 
-        # target_ids = sorted(list(unique_ids_in_clip))[:self.max_objs]
         id_to_channel = {uid: i for i, uid in enumerate(target_ids)}
         
         imgs, masks = [], []
