@@ -105,6 +105,80 @@ def run_base_vita_inference(model, frames):
         baseline_results.append(frame_results)
     return baseline_results
 
+def calculate_frag_and_assa(pred_results, gt_masks):
+    T = len(pred_results)
+    num_gt_objs = gt_masks.shape[1]
+    
+    total_frag = 0
+    total_assa = 0
+    count_objs = 0
+    
+    for gt_id in range(num_gt_objs):
+        # Extract GT trajectory
+        gt_traj = gt_masks[:, gt_id].numpy()
+        if gt_traj.sum() == 0: continue # Object doesn't exist
+        
+        # Find the best matching predicted Global ID
+        best_pred_id = -1
+        max_total_intersection = 0
+        
+        # Organize predictions by Track ID
+        pred_maps = {} 
+        for t in range(T):
+            for pid, mask in pred_results[t]:
+                if pid not in pred_maps: 
+                    pred_maps[pid] = np.zeros((T, *mask.shape[-2:]))
+                pred_maps[pid][t] = (mask.numpy() > 0.5)
+        
+        # Check overlaps to find the dominant track
+        for pid, p_traj in pred_maps.items():
+            intersection = np.logical_and(p_traj, gt_traj).sum()
+            if intersection > max_total_intersection:
+                max_total_intersection = intersection
+                best_pred_id = pid
+                
+        if best_pred_id == -1: continue 
+        
+        count_objs += 1
+        p_traj = pred_maps[best_pred_id]
+
+        # Calculate AssA (Temporal IoU)
+        # Intersection over Union of the entire 3D volume (Time x Height x Width)
+        vol_inter = np.logical_and(p_traj, gt_traj).sum()
+        vol_union = np.logical_or(p_traj, gt_traj).sum()
+        total_assa += vol_inter / (vol_union + 1e-6)
+
+        # Calculate Frag (Interruptions)
+        # Check frame-level detection status
+        is_matched = []
+        for t in range(T):
+            # Frame-level IoU > 0.5 considered a "hit"
+            u = np.logical_or(p_traj[t], gt_traj[t]).sum()
+            i = np.logical_and(p_traj[t], gt_traj[t]).sum()
+            is_matched.append((i / (u + 1e-6)) > 0.1) 
+            
+        # Count transitions from Match -> Miss -> Match
+        interruptions = 0
+        
+        # Find start and end of the object's life
+        first_match = next((i for i, x in enumerate(is_matched) if x), None)
+        last_match = next((i for i, x in enumerate(reversed(is_matched)) if x), None)
+        
+        if first_match is not None and last_match is not None:
+            last_match = T - 1 - last_match
+            # Scan between first and last detection
+            for t in range(first_match, last_match):
+                # If we have a miss (False) preceded by a match (True)
+                if not is_matched[t] and is_matched[t-1]:
+                    interruptions += 1
+                    
+        total_frag += interruptions
+
+    avg_assa = total_assa / max(count_objs, 1)
+    avg_frag = total_frag / max(count_objs, 1) # Average frag per object
+    
+    return avg_frag, avg_assa
+
 def evaluate_and_log(model, dataset, device, epoch, beta=0.2, match_threshold=0.5):
     logger = Logger.current_logger()
     model.eval()
@@ -202,9 +276,17 @@ def evaluate_and_log(model, dataset, device, epoch, beta=0.2, match_threshold=0.
     
     print(f"Metrics -> J (IoU): {avg_J:.3f} | F (Boundary): {avg_F:.3f} | ID Switches: {total_switches}")
 
+    switches = calculate_true_id_switches(clean_results, gt_masks)
+    frag, assa = calculate_frag_and_assa(clean_results, gt_masks)
+    
+    print(f"Metrics -> IDSW: {switches} | Frag: {frag:.2f} | AssA: {assa:.3f}")
+
     if logger:
         logger.report_single_value(name = 'Final ID Switches', value = total_switches)
         logger.report_single_value(name = 'Region Similarity (J)', value = avg_J)
         logger.report_single_value(name = 'Boundary Accuracy (F)', value = avg_F)
+        logger.report_single_value(name = 'ID Switches', value = switches)
+        logger.report_single_value(name = 'Fragmentation', value = frag)
+        logger.report_single_value(name = 'Association Accuracy', value = assa)
     
     return total_switches
