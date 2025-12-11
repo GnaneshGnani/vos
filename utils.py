@@ -183,15 +183,15 @@ class TCOVISCriterion(nn.Module):
         
         for t in range(T):
             # Compute cost for frame t (similar to matcher logic but returning the matrix)
-            p_mask = pred_masks[:, t].flatten(1).sigmoid()
-            g_mask = gt_masks[:, t].flatten(1)
+            p_mask = pred_masks[:, t].flatten(2).sigmoid()
+            g_mask = gt_masks[:, t].flatten(2)
             
             # Mask Cost
             cost_mask = -torch.bmm(p_mask, g_mask.transpose(1, 2)) # B x N x num_gt
             
             # Dice Cost
             numerator = 2 * torch.bmm(p_mask, g_mask.transpose(1, 2))
-            denominator = p_mask.sum(1).unsqueeze(2) + g_mask.sum(1).unsqueeze(1) + 1e-6
+            denominator = p_mask.sum(2).unsqueeze(2) + g_mask.sum(2).unsqueeze(1) + 1e-6
             cost_dice = 1 - (numerator / denominator)
             
             # Weighted Sum for this frame
