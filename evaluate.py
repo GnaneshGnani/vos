@@ -1,4 +1,5 @@
 import io
+import os
 import cv2
 import torch
 import numpy as np
@@ -24,7 +25,7 @@ def compute_j_and_f(pred_mask, gt_mask):
     def get_boundary(mask):
         # Get boundaries via morphological erosion (mask - eroded_mask)
         mask = mask.astype(np.uint8)
-        eroded = cv2.erode(mask, np.ones((3, 3), np.uint8), iterations=1)
+        eroded = cv2.erode(mask, np.ones((3, 3), np.uint8), iterations = 1)
         boundary = mask - eroded
         return boundary
 
@@ -36,8 +37,8 @@ def compute_j_and_f(pred_mask, gt_mask):
 
     else:
         # Use a slight dilation for tolerance (standard practice in VOS benchmarks)
-        dilated_gt = cv2.dilate(gt_boundary, np.ones((3, 3), np.uint8), iterations=1)
-        dilated_pred = cv2.dilate(pred_boundary, np.ones((3, 3), np.uint8), iterations=1)
+        dilated_gt = cv2.dilate(gt_boundary, np.ones((3, 3), np.uint8), iterations = 1)
+        dilated_pred = cv2.dilate(pred_boundary, np.ones((3, 3), np.uint8), iterations = 1)
 
         # Precision: How many predicted boundary pixels are close to GT boundary?
         # Recall: How many GT boundary pixels are close to predicted boundary?
@@ -51,9 +52,9 @@ def compute_j_and_f(pred_mask, gt_mask):
 
     return J, F_score
 
-def visualize_tracker(frames, tracker_results, title="Tracked"):
+def visualize_tracker(frames, tracker_results, title = "Tracked", save_path = None):
     T = len(frames)
-    fig, axes = plt.subplots(2, T, figsize=(15, 6))
+    fig, axes = plt.subplots(2, T, figsize = (15, 6))
     plt.suptitle(title)
     cmap = plt.get_cmap('tab10')
     colors = [cmap(i)[:3] for i in range(10)]
@@ -81,11 +82,17 @@ def visualize_tracker(frames, tracker_results, title="Tracked"):
         axes[1, t].set_title(f"Tracking")
     
     plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path)
+        print(f"Saved visualization to: {save_path}")
+
     buf = io.BytesIO()
-    plt.savefig(buf, format='png')
+    plt.savefig(buf, format = 'png')
     buf.seek(0)
     plt.close(fig) 
-    return Image.open(buf)
+
+    return Image.open(buf).convert("RGB")
 
 def run_base_vita_inference(model, frames):
     device = frames.device
@@ -179,7 +186,7 @@ def calculate_frag_and_assa(pred_results, gt_masks):
     
     return avg_frag, avg_assa
 
-def evaluate_and_log(model, dataset, device, epoch, beta=0.2, match_threshold=0.5):
+def evaluate_and_log(model, dataset, device, epoch, run_dir, beta = 0.2, match_threshold = 0.5):
     logger = Logger.current_logger()
     model.eval()
     
@@ -188,10 +195,11 @@ def evaluate_and_log(model, dataset, device, epoch, beta=0.2, match_threshold=0.
     frames_gpu = frames.unsqueeze(0).to(device) 
 
     # Run Baseline (VITA Only)
+    baseline_save_path = os.path.join(run_dir, f"vis_baseline_epoch_{epoch}.png")
     baseline_results = run_base_vita_inference(model, frames.to(device))
-    baseline_vis_img = visualize_tracker(frames, baseline_results, title="Baseline (VITA Segmentation Only)")
+    baseline_vis_img = visualize_tracker(frames, baseline_results, title = "Baseline (VITA Segmentation Only)", save_path = baseline_save_path)
     if logger:
-        logger.report_image(title="Visual Comparison", series="Baseline VITA Output", image=baseline_vis_img, iteration=epoch)
+        logger.report_image(title = "Visual Comparison", series = "Baseline VITA Output", image = baseline_vis_img, iteration = epoch)
 
     # Run TCOVIS Tracking
     tracker = GlobalTracker(beta = beta, match_threshold = match_threshold)
@@ -204,10 +212,11 @@ def evaluate_and_log(model, dataset, device, epoch, beta=0.2, match_threshold=0.
         p_embs = pred_embs[0, t]
         frame_results = tracker.update(p_masks, p_embs)
         tracked_results.append(frame_results)
-        
-    tracked_vis_img = visualize_tracker(frames, tracked_results, title="TCOVIS-Inspired VITA Tracking")
+    
+    tcovis_save_path = os.path.join(run_dir, f"vis_tcovis_epoch_{epoch}.png")
+    tracked_vis_img = visualize_tracker(frames, tracked_results, title = "TCOVIS-Inspired VITA Tracking", save_path = tcovis_save_path)
     if logger:
-        logger.report_image(title="Visual Comparison", series="TCOVIS-Inspired VITA Output", image=tracked_vis_img, iteration=epoch)
+        logger.report_image(title = "Visual Comparison", series = "TCOVIS-Inspired VITA Output", image = tracked_vis_img, iteration = epoch)
 
     # Metric Calculation (J, F, IDSW) - Full Validation Set
     print(f"Calculating Metrics (J, F, IDSW)...")
