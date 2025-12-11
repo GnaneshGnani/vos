@@ -68,14 +68,20 @@ def validate(model, dataloader, criterion, device, epoch, logger):
     
     with torch.no_grad():
         for batch_idx, (frames, gt_masks) in enumerate(dataloader):
+            iteration = epoch * len(dataloader) + batch_idx
             frames, gt_masks = frames.to(device), gt_masks.to(device)
             
             pred_masks, pred_embs = model(frames)
             
-            # Use same criterion as training to get comparable loss
-            _, loss = criterion(pred_masks, pred_embs, gt_masks)
+            losses_dict, loss = criterion(pred_masks, pred_embs, gt_masks)
             total_val_loss += loss.item()
             
+            if logger:
+                logger.report_scalar(title = 'Validation Losses', series = 'Mask Loss', value = losses_dict['loss_mask'].item(), iteration = iteration)
+                logger.report_scalar(title = 'Validation Losses', series = 'Dice Loss', value = losses_dict['loss_dice'].item(), iteration = iteration)
+                logger.report_scalar(title = 'Validation Losses', series = 'Matching Loss', value = losses_dict['loss_match'].item(), iteration = iteration)
+                logger.report_scalar(title = 'Validation Losses', series = 'Contrastive Loss', value = losses_dict['loss_contrastive'].item(), iteration = iteration)
+
     avg_val_loss = total_val_loss / len(dataloader)
     print(f"Epoch {epoch+1} | Validation Loss: {avg_val_loss:.4f}")
     
@@ -99,6 +105,8 @@ def main():
         )
         task.connect(args)
         logger = task.get_logger()
+    else:
+        print("ClearML logging disabled.")
 
 
     if not os.path.exists(os.path.join(args.dataset_root, 'train')):
@@ -163,9 +171,20 @@ def main():
             total_loss_epoch += loss.item()
             
             if batch_idx % 10 == 0:
-                print(f"Epoch {epoch+1} | Batch {batch_idx} | Train Loss: {loss.item():.4f}")
+                log_msg = (f"Epoch {epoch+1} | Batch {batch_idx} | Total: {loss.item():.4f} | "
+                           f"Mask: {losses_dict['loss_mask']:.3f} | "
+                           f"Dice: {losses_dict['loss_dice']:.3f} | "
+                           f"Match: {losses_dict['loss_match']:.3f} | "
+                           f"Contrastive: {losses_dict['loss_contrastive']:.3f}")
+
+                # print(log_msg)
+
                 if logger:
-                    logger.report_scalar(title = 'Training', series = 'Total Loss', value = loss.item(), iteration = iteration)
+                    logger.report_scalar(title = 'Training Losses', series = 'Total Loss', value = loss.item(), iteration = iteration)
+                    logger.report_scalar(title = 'Training Losses', series = 'Mask Loss', value = losses_dict['loss_mask'].item(), iteration = iteration)
+                    logger.report_scalar(title = 'Training Losses', series = 'Dice Loss', value = losses_dict['loss_dice'].item(), iteration = iteration)
+                    logger.report_scalar(title = 'Training Losses', series = 'Matching Loss', value = losses_dict['loss_match'].item(), iteration = iteration)
+                    logger.report_scalar(title = 'Training Losses', series = 'Contrastive Loss', value = losses_dict['loss_contrastive'].item(), iteration = iteration)
 
         avg_train_loss = total_loss_epoch / len(train_loader)
         print(f"Epoch {epoch+1} Complete. Train Loss: {avg_train_loss:.4f}")
