@@ -109,15 +109,13 @@ class VITA_TCOVIS(nn.Module):
             toks_t = out_tokens[:, t]
             processed_toks = self.mask_head(toks_t)
             
-            # Dot Product: Token (N, C) vs Feature Map (C, H/8, W/8)
-            # Result: (N, H/8, W/8)
-            masks_low = torch.einsum("nc, chw -> nhw", processed_toks, mask_features_aligned[:, t])
+            # Dot Product: (B, N, C) vs (B, C, H, W) -> (B, N, H, W)
+            masks_low = torch.einsum("bnc, bchw -> bnhw", processed_toks, mask_features_aligned[:, t])
             
             # Upsample Stride 8 -> Stride 1 (Original Image Size)
-            masks_low = masks_low.unsqueeze(0) 
             masks_up = F.interpolate(masks_low, size = (H, W), mode = 'bilinear', align_corners = False)
             
-            all_masks.append(masks_up.squeeze(0))
+            all_masks.append(masks_up)
             all_embs.append(self.temporal_module(toks_t))
             
         return torch.stack(all_masks, dim = 1), torch.stack(all_embs, dim = 1)

@@ -13,7 +13,7 @@ from utils import TCOVISCriterion, HungarianMatcher
 def get_args_parser():
     parser = argparse.ArgumentParser(description = 'VITA-TCOVIS Training')
     
-    # --- ClearML Logging Args ---
+    # ClearML Logging Args
     parser.add_argument('--enable_clearml', action = 'store_true', help = 'Enable ClearML logging')
     parser.add_argument('--project_name', default = 'VITA-TCOVIS Project', type = str)
     parser.add_argument('--task_name', default = 'TCOVIS Experiment', type = str)
@@ -28,8 +28,7 @@ def get_args_parser():
     parser.add_argument('--lr_backbone', default = 1e-5, type = float)
     
     # Model Hyperparameters
-    # FIX for Heuristics: Set this to 50 or 100 to avoid dropping objects
-    parser.add_argument('--num_tokens', default = 10, type = int, help = 'Number of query tokens. Set high (e.g. 50) to capture all objects.')
+    parser.add_argument('--num_tokens', default = 20, type = int, help = 'Number of query tokens. Set high (e.g. 50) to capture all objects.')
     parser.add_argument('--hidden_dim', default = 256, type = int)
     parser.add_argument('--beta', default = 0.2, type = float, help = 'Momentum for memory update')
     

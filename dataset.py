@@ -35,7 +35,7 @@ class YouTubeVOSDataset(Dataset):
                 selected.append(frames_list[-1])
 
         elif len(frames_list) > self.num_frames:
-            start = np.random.randint(0, len(frames_list) - self.num_frames)
+            start = np.random.randint(0, (len(frames_list) - self.num_frames) + 1)
             selected = frames_list[start : start + self.num_frames]
 
         else:

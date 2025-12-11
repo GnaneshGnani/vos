@@ -124,7 +124,7 @@ class TCOVISCriterion(nn.Module):
                 num_frames_matched += 1
 
         if num_frames_matched == 0:
-            return torch.tensor(0.0, device = pred_embs.device, requires_grad = True)
+            return pred_embs.sum() * 0.0
             
         return total_loss / num_frames_matched
 
@@ -168,22 +168,48 @@ class TCOVISCriterion(nn.Module):
                 num_comparisons += 1
                 
         if num_comparisons == 0:
-            return torch.tensor(0.0, device = pred_embs.device, requires_grad = True)
+            return pred_embs.sum() * 0.0
             
         return total_loss / num_comparisons
 
     def forward(self, pred_masks, pred_embs, gt_masks):
         B, T, N, H, W = pred_masks.shape
+        _, _, num_gt, _, _ = gt_masks.shape
+
+        final_indices = []
         
-        indices_list = []
+        # We calculate cost matrices for all frames
+        total_C = torch.zeros((B, N, num_gt), device=pred_masks.device)
+        
+        for t in range(T):
+            # Compute cost for frame t (similar to matcher logic but returning the matrix)
+            p_mask = pred_masks[:, t].flatten(1).sigmoid()
+            g_mask = gt_masks[:, t].flatten(1)
+            
+            # Mask Cost
+            cost_mask = -torch.bmm(p_mask, g_mask.transpose(1, 2)) # B x N x num_gt
+            
+            # Dice Cost
+            numerator = 2 * torch.bmm(p_mask, g_mask.transpose(1, 2))
+            denominator = p_mask.sum(1).unsqueeze(2) + g_mask.sum(1).unsqueeze(1) + 1e-6
+            cost_dice = 1 - (numerator / denominator)
+            
+            # Weighted Sum for this frame
+            C_t = self.matcher.cost_mask * cost_mask + self.matcher.cost_dice * cost_dice
+            total_C += C_t
+            
+        # Perform Hungarian Matching on the SUMMED cost
+        total_C = total_C.cpu().numpy()
+        for b in range(B):
+            final_indices.append(linear_sum_assignment(total_C[b]))
+
+        indices_list = [final_indices for _ in range(T)]
+        
         mask_loss_accum = 0.0
         dice_loss_accum = 0.0 # Accumulator for Dice
         
         for t in range(T):
-            indices = self.matcher(pred_masks[:, t].detach(), gt_masks[:, t])
-            indices_list.append(indices)
-            
-            l_bce, l_dice = self.loss_masks(pred_masks[:, t], gt_masks[:, t], indices)
+            l_bce, l_dice = self.loss_masks(pred_masks[:, t], gt_masks[:, t], final_indices)
             mask_loss_accum += l_bce
             dice_loss_accum += l_dice
         

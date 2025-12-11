@@ -194,7 +194,7 @@ def evaluate_and_log(model, dataset, device, epoch, beta=0.2, match_threshold=0.
         logger.report_image(title="Visual Comparison", series="Baseline VITA Output", image=baseline_vis_img, iteration=epoch)
 
     # Run TCOVIS Tracking
-    tracker = GlobalTracker(beta=beta, match_threshold=match_threshold)
+    tracker = GlobalTracker(beta = beta, match_threshold = match_threshold)
     with torch.no_grad(): pred_masks, pred_embs = model(frames_gpu)
     tracker.reset()
     tracked_results = []
