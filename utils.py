@@ -199,7 +199,7 @@ class TCOVISCriterion(nn.Module):
             total_C += C_t
             
         # Perform Hungarian Matching on the SUMMED cost
-        total_C = total_C.cpu().numpy()
+        total_C = total_C.detach().cpu().numpy()
         for b in range(B):
             final_indices.append(linear_sum_assignment(total_C[b]))
 
